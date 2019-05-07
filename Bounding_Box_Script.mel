@@ -1,0 +1,243 @@
+{
+    string $MyWindow = "myWindow";
+    
+    if (`window -ex $MyWindow`)
+    {
+        deleteUI $MyWindow;
+    }
+        
+    $command = ("deleteUI " + $MyWindow);
+    
+    window  -title "Create Bounding Box" myWindow;
+    
+    //Empty frameLayout
+    frameLayout -label "";
+    setParent..;
+    setParent..;
+    
+    //Bounding Box type Frame
+    frameLayout -collapsable true -label "Bounding Box type";
+    columnLayout;
+    checkBox -label "Axis Aligned" axisValue;
+    //$axisAligned = `checkBox -query -value $check`;
+    radioButtonGrp -numberOfRadioButtons 2 -label "Bounding Box Type" -labelArray2 "Cube" "Sphere" -select 1 selectType;
+    
+    setParent..;
+    setParent..;
+    
+    //Bounding Box Size 
+    frameLayout -collapsable true -label "Bounding Box Size";
+    columnLayout;
+    floatSliderGrp -label "Offset" -field on -minValue -1 -maxValue 1 -value 0 offsetSlider;
+    
+    setParent..;
+    setParent..;
+    
+    //Bounding Box Shader
+    frameLayout -collapsable true -label "Bounding Box Shader";
+    columnLayout;
+    
+    checkBox -label "Create New Bounding Box Shader" shaderValue;
+    colorSliderGrp -label "Pick Color" -rgb 1 0 0 colorSlider;
+    floatSliderGrp -label "Transparency" -field on -minValue 0 -maxValue 1 -value 0.5 transSlider;
+    
+    setParent..;
+    setParent..;
+    
+    //Bounding Box Settings
+    frameLayout -collapsable true -label "Bounding Box Settings";
+    columnLayout;
+    
+    checkBox -label "Parent Bounding Box with Mesh" parentValue;
+    checkBox -label "Lock Bounding Box Attributes" lockValue;
+    checkBox -label "Create Layer for Bounding Box" layerValue;
+    
+    setParent..;
+    setParent..;
+    
+    //Buttons
+    frameLayout -label "";
+    rowLayout -numberOfColumns 3;
+    
+    button -label "Skapa BBox" -w 100 -command "MakeBBox";
+    button -label "Ångra" -w 100 -command "undo";
+    button -label "Avsluta" -w 100 -command $command;
+
+    
+    showWindow;
+    
+    
+    
+    proc MakeBBox()
+    {
+        string $selected[] = selectedNodes();
+        
+        if(size($selected) > 0)
+        {
+            //Check all info
+            $axisValue = `checkBox -query -value axisValue`;
+            $type = `radioButtonGrp -q -sl selectType`;
+            $offset = `floatSliderGrp -q -value offsetSlider`;
+            $shaderValue = `checkBox -query -value shaderValue`;
+            float $colorRGB[3] = `colorSliderGrp -query -rgb colorSlider`;
+            $transparentcy = `floatSliderGrp -query -value transSlider`;
+            $parentValue = `checkBox -query -value parentValue`;
+            $lockValue = `checkBox -query -value lockValue`;
+            $layerValue = `checkBox -query -value layerValue`;
+            
+            //Centering pivot.
+            xform -cp $selected[0];
+    
+            //Get info of selected
+            float $pivot[] = `xform  -q -ws -t ($selected[0]+".scalePivot")`;
+            float $translateX1 = getAttr($selected[0] + ".translateX");
+            float $translateY1 = getAttr($selected[0] + ".translateY");
+            float $translateZ1 = getAttr($selected[0] + ".translateZ");
+            float $rotateX1 = getAttr($selected[0] + ".rotateX");
+            float $rotateY1 = getAttr($selected[0] + ".rotateY");
+            float $rotateZ1 = getAttr($selected[0] + ".rotateZ");
+            
+            //Center mesh before checking vertex points
+            float $move[3];
+            $move[0] = -($pivot[0] - $translateX1);
+            $move[1] = -($pivot[1] - $translateY1);
+            $move[2] = -($pivot[2] - $translateZ1);
+            
+            if (!$axisValue)
+                rotate 0 0 0;
+            
+            move  $move[0] $move[1] $move[2];
+            
+            //Getting vertex max and min
+            int $nrOfVertex[] = `polyEvaluate -v $selected[0]`;
+            float $max[] = `xform  -q -ws -t ($selected[0] + ".vtx[0]")`;
+            float $min[] = `xform -q -ws -t ($selected[0] + ".vtx[0]")`;
+            int $i;
+            int $y;
+            
+            for ($i = 0; $i < $nrOfVertex[0]; $i++)
+            {
+               float $tmp[] = `xform -q -ws -t ($selected[0] + ".vtx[" + $i + "]")`;
+               
+               for ($y = 0; $y < 3; $y++)
+               {
+                   if ($max[$y] < $tmp[$y])
+                       $max[$y] = $tmp[$y];
+
+                   if ($min[$y] > $tmp[$y])
+                       $min[$y] = $tmp[$y];
+               }
+            }
+            
+            float $maxPos[3];
+            
+            $maxPos[0] = $max[0] - $min[0];
+            $maxPos[1] = $max[1] - $min[1];
+            $maxPos[2] = $max[2] - $min[2];
+            
+            //Reset position and rotation
+            if (!$axisValue)
+            {
+                undo;
+            }
+            
+            undo;
+
+            //Make Bounding Box
+            if($type == 1)
+            {
+                polyCube -name ($selected[0] + "BoundingShape") -w (($maxPos[0]) + $offset) -h (($maxPos[1]) + $offset) -d (($maxPos[2]) + $offset);
+            }
+            
+            //Make Bounding Sphere
+            if($type == 2)
+            {
+                float $radius;
+                int $i;
+                int $y;
+                
+                for ($i = 0; $i < $nrOfVertex[0]; $i++)
+                {
+                    float $tmp[] = `xform -q -os -t ($selected[0] + ".vtx[" + $i + "]")`;
+                    
+                    vector $vectorSphere = <<$tmp[0], $tmp[1], $tmp[2]>>;
+                    
+                    for ($y = 0; $y < 3; $y++)
+                    {
+                        if(mag($vectorSphere) > $radius)
+                            $radius = mag($vectorSphere); 
+                    }  
+                    
+                    print ("radius: " + $radius + "\n");
+                    
+                }
+
+                polySphere -name ($selected[0] + "BoundingShape") -r ($radius + $offset);
+            }
+             if(!$axisValue)
+            {
+                rotate -x $rotateX1 -y $rotateY1 -z $rotateZ1;
+            }
+           
+            //Set Bounding Position
+            
+            if ($axisValue)
+            {
+                move -x ($max[0] - ($maxPos[0]/2)) -y ($max[1] - ($maxPos[1]/2)) -z ($max[2] - ($maxPos[2]/2));
+            }
+            
+            if ($type  == 1)
+            {
+                move -r -x $pivot[0] -y $pivot[1] -z $pivot[2]; 
+            }
+            if ($type == 2)
+            {
+                move -x $translateX1 -y $translateY1 -z $translateZ1;
+            }
+
+            //Make Shader
+            if($shaderValue)
+            {
+                if (`objExists bShader`)
+                {
+                    setAttr "bShader.color" -type double3 $colorRGB[0] $colorRGB[1] $colorRGB[2];
+                    hyperShade -assign bShader;
+                }
+                else
+                {
+                    shadingNode -asShader lambert -name"bShader";
+                    setAttr "bShader.color" -type double3 $colorRGB[0] $colorRGB[1] $colorRGB[2];
+                    sets -renderable true -noSurfaceShader true -empty -name ShaderGrp;
+                    connectAttr -f bShader.outColor ShaderGrp.surfaceShader;
+                    setAttr "bShader.transparency" -type double3 $transparentcy $transparentcy $transparentcy ;
+                }
+            }
+            
+            //Set BBox as child to mesh
+            if($parentValue)
+            {
+                parent ($selected[0] + "BoundingShape") $selected[0];
+            }
+            
+            //Lock all attributes
+            if($lockValue)
+            {
+                $selected = selectedNodes();
+                setAttr -l on ($selected[0] + ".t");
+                setAttr -l on ($selected[0] + ".r");
+                setAttr -l on ($selected[0] + ".s");
+                setAttr -l on ($selected[0] + ".sh");
+                setAttr -l on ($selected[0] + ".ro");
+                setAttr -l on ($selected[0] + ".ra");
+                setAttr -l on ($selected[0] + ".v");
+                setAttr -l on ($selected[0] + ".it");
+            }
+            
+            //Create layer
+            if($layerValue)
+            {
+                createDisplayLayer -name "Bounding Box" -number 1 -nr;
+            }
+        }
+    }
+}
